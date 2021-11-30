@@ -1,0 +1,69 @@
+# Example to use Docker instead of containerd & nerdctl
+# $ limactl start ./docker.yaml
+# $ limactl shell docker docker run -it -v $HOME:$HOME --rm alpine
+
+# To run `docker` on the host (assumes docker-cli is installed):
+# $ export DOCKER_HOST=unix://$HOME/docker.sock
+# $ docker ...
+# This example requires Lima v0.7.3 or later
+images:
+  # Hint: run `limactl prune` to invalidate the "current" cache
+  - location: "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/impish/current/impish-server-cloudimg-arm64.img"
+    arch: "aarch64"
+mounts:
+  - location: "~"
+    writable: true
+  - location: "/tmp/lima"
+    writable: true
+
+# CPUs: if you see performance issues, try limiting cpus to 1.
+# Default: 4
+cpus: 2
+
+# Memory size
+# Default: "4GiB"
+memory: "4GiB"
+
+# Disk size
+# Default: "100GiB"
+disk: "100GiB"
+
+ssh:
+  localPort: 60006
+  # Load ~/.ssh/*.pub in addition to $LIMA_HOME/_config/user.pub , for allowing DOCKER_HOST=ssh:// .
+  # This option is enabled by default.
+  # If you have an insecure key under ~/.ssh, do not use this option.
+  loadDotSSHPubKeys: true
+# containerd is managed by Docker, not by Lima, so the values are set to false here.
+containerd:
+  system: false
+  user: false
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      command -v docker >/dev/null 2>&1 && exit 0
+      export DEBIAN_FRONTEND=noninteractive
+      curl -fsSL https://get.docker.com | sh
+      if ! timeout 60s bash -c "while [ ! -e /var/run/docker.sock ]; do sleep 1s; done"; then
+        echo >&2 "docker.sock not found in /var/run"
+      else
+        # Check your host user id, and change owner to user id according to host
+        sudo chown $LIMA_CIDATA_USER /var/run/docker.sock
+      fi
+probes:
+  - script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! timeout 30s bash -c "until command -v docker >/dev/null 2>&1; do sleep 3; done"; then
+        echo >&2 "docker is not installed yet"
+        exit 1
+      fi
+    hint: See "/var/log/cloud-init-output.log". in the guest
+portForwards:
+ # - guestSocket: "/run/user/{{.UID}}/docker.sock"
+  - guestSocket: "/var/run/docker.sock"
+    hostSocket: "{{.Home}}/.lima/docker/docker.sock"
