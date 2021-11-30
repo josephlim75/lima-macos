@@ -48,12 +48,22 @@ provision:
       command -v docker >/dev/null 2>&1 && exit 0
       export DEBIAN_FRONTEND=noninteractive
       curl -fsSL https://get.docker.com | sh
+      cat << EOF > /var/lib/cloud/scripts/per-boot/02-docker-chown.sh
+      #!/bin/sh
+
+      set -eux
+      LIMA_CIDATA_MNT="/mnt/lima-cidata"
+      . "$LIMA_CIDATA_MNT/lima.env"
+
       if ! timeout 60s bash -c "while [ ! -e /var/run/docker.sock ]; do sleep 1s; done"; then
         echo >&2 "docker.sock not found in /var/run"
       else
         # Check your host user id, and change owner to user id according to host
         sudo chown $LIMA_CIDATA_USER /var/run/docker.sock
       fi
+      EOF
+      chmod +x /var/lib/cloud/scripts/per-boot/02-docker-chown.sh
+      sudo /var/lib/cloud/scripts/per-boot/02-docker-chown.sh
 probes:
   - script: |
       #!/bin/bash
